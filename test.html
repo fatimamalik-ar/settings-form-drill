@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Validation tests · Fieldnote</title>
+  <style>
+    body { max-width: 720px; margin: 48px auto; padding: 0 20px; color: #20251f; background: #f5f5ef; font: 15px/1.5 "Segoe UI", Tahoma, sans-serif; }
+    h1 { font: 32px/1.15 Georgia, "Times New Roman", serif; }
+    #summary { font-weight: 700; }
+    #results { padding-left: 22px; }
+    .pass { color: #305c48; }
+    .fail { color: #a53a31; }
+    iframe { position: absolute; width: 1px; height: 1px; border: 0; clip-path: inset(50%); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Settings validation tests</h1>
+    <p id="summary" role="status" aria-live="polite">Running tests…</p>
+    <ol id="results"></ol>
+    <iframe id="app" title="Settings validation test runner" src="index.html?testMode=1"></iframe>
+  </main>
+  <script>
+    const validSettings = {
+      displayName: "Avery Morgan",
+      email: "avery@example.com",
+      newPassword: "",
+      confirmPassword: ""
+    };
+
+    const testCases = [
+      { id: "valid-profile", name: "Accept valid profile with empty password", values: { ...validSettings }, expected: {} },
+      { id: "required-name", name: "Require a nonblank display name", values: { ...validSettings, displayName: "   " }, expected: { displayName: "Enter your display name." } },
+      { id: "trim-name", name: "Trim display name when validating", values: { ...validSettings, displayName: "  Avery Morgan  " }, expected: {} },
+      { id: "email-no-domain", name: "Reject email a@b", values: { ...validSettings, email: "a@b" }, expected: { email: "Enter a valid email address." } },
+      { id: "email-malformed", name: "Reject malformed email", values: { ...validSettings, email: "avery at example.com" }, expected: { email: "Enter a valid email address." } },
+      { id: "short-password", name: "Reject password shorter than 8 characters", values: { ...validSettings, newPassword: "abc", confirmPassword: "abc" }, expected: { newPassword: "Password must be at least 8 characters" } },
+      { id: "empty-password", name: "Allow both password fields to be empty", values: { ...validSettings }, expected: {} },
+      { id: "missing-confirm", name: "Require matching confirmation when setting a password", values: { ...validSettings, newPassword: "long-enough" }, expected: { confirmPassword: "Passwords do not match." } },
+      { id: "mismatched-password", name: "Reject mismatched passwords", values: { ...validSettings, newPassword: "long-enough", confirmPassword: "different-value" }, expected: { confirmPassword: "Passwords do not match." } },
+      { id: "matching-password", name: "Accept matching passwords of at least 8 characters", values: { ...validSettings, newPassword: "long-enough", confirmPassword: "long-enough" }, expected: {} },
+      { id: "confirm-only", name: "Reject confirmation when the new password is empty", values: { ...validSettings, confirmPassword: "long-enough" }, expected: { confirmPassword: "Enter a new password to confirm it." } }
+    ];
+
+    function sameErrors(actual, expected) {
+      const actualKeys = Object.keys(actual).sort();
+      const expectedKeys = Object.keys(expected).sort();
+      return JSON.stringify(actualKeys) === JSON.stringify(expectedKeys)
+        && actualKeys.every((key) => actual[key] === expected[key]);
+    }
+
+    const frame = document.getElementById("app");
+    const summary = document.getElementById("summary");
+    const resultsList = document.getElementById("results");
+    let timeoutId;
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== frame.contentWindow || event.data?.type !== "fieldnote:validation-results") return;
+      window.clearTimeout(timeoutId);
+      const results = new Map(event.data.results.map((result) => [result.id, result.errors]));
+      let passed = 0;
+
+      for (const testCase of testCases) {
+        const actual = results.get(testCase.id);
+        const success = actual !== undefined && sameErrors(actual, testCase.expected);
+        passed += Number(success);
+        const item = document.createElement("li");
+        item.className = success ? "pass" : "fail";
+        item.textContent = `${success ? "PASS" : "FAIL"}: ${testCase.name}`;
+        if (!success) item.textContent += ` (expected ${JSON.stringify(testCase.expected)}, got ${JSON.stringify(actual)})`;
+        resultsList.append(item);
+      }
+
+      summary.textContent = `${passed}/${testCases.length} tests passed`;
+      summary.className = passed === testCases.length ? "pass" : "fail";
+      document.documentElement.dataset.testResult = passed === testCases.length ? "passed" : "failed";
+    });
+
+    frame.addEventListener("load", () => {
+      frame.contentWindow.postMessage({
+        type: "fieldnote:validate",
+        cases: testCases.map(({ id, values }) => ({ id, values }))
+      }, "*");
+    });
+
+    timeoutId = window.setTimeout(() => {
+      summary.textContent = "Tests could not reach the settings page.";
+      summary.className = "fail";
+      document.documentElement.dataset.testResult = "failed";
+    }, 5000);
+  </script>
+</body>
+</html>
